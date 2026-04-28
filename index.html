@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>VAK Parkplatz</title>
+
+<!-- Supabase JS -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Chart.js für Auswertungen -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+
+<style>
+/* ════════════════════════════════════════
+   VARIABLEN & RESET
+════════════════════════════════════════ */
+:root {
+  --vb:  #1a3a6b;
+  --vbm: #2a5298;
+  --vbl: #e8edf6;
+  --vbb: #b8c8e8;
+  --vg:  #1d7a45;
+  --vgl: #edf7f1;
+  --vr:  #b02a1f;
+  --vrl: #fdf2f1;
+  --va:  #c07000;
+  --val: #fef6ec;
+  --vm:  #5a6478;
+  --bg:  #f0f3f8;
+  --card: white;
+  --radius: 12px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { height: 100%; background: var(--bg); }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; color: #1a1a2e; min-height: 100%; }
+
+/* ════════════════════════════════════════
+   LAYOUT — MOBILE + DESKTOP
+════════════════════════════════════════ */
+.app-shell {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  box-shadow: 0 0 60px rgba(0,0,0,0.12);
+}
+@media (min-width: 900px) {
+  body { display: flex; align-items: flex-start; justify-content: center; padding: 24px; background: var(--bg); }
+  .app-shell { max-width: 1100px; width: 100%; flex-direction: row; align-items: flex-start; min-height: calc(100vh - 48px); border-radius: 16px; overflow: hidden; }
+  .sidebar {
+    width: 300px; flex-shrink: 0; background: var(--vb);
+    display: flex; flex-direction: column; min-height: calc(100vh - 48px);
+  }
+  .sidebar-logo { padding: 28px 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .sidebar-logo h1 { color: white; font-size: 17px; font-weight: 700; margin-top: 8px; }
+  .sidebar-logo p  { color: rgba(255,255,255,0.6); font-size: 12px; margin-top: 3px; }
+  .sidebar-nav { flex: 1; padding: 12px 0; }
+  .snav-btn {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 12px 20px;
+    background: none; border: none; cursor: pointer;
+    color: rgba(255,255,255,0.6); font-size: 13px; font-weight: 600;
+    font-family: inherit; text-align: left; transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .snav-btn:hover { color: white; background: rgba(255,255,255,0.08); }
+  .snav-btn.on { color: white; background: rgba(255,255,255,0.12); border-left-color: white; }
+  .snav-icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+  .sidebar-user {
+    padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .sidebar-user-av {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: white; flex-shrink: 0;
+  }
+  .sidebar-user-info { flex: 1; }
+  .sidebar-user-name { font-size: 12px; font-weight: 600; color: white; }
+  .sidebar-user-role { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 1px; }
+  .btn-logout-sidebar {
+    background: none; border: none; color: rgba(255,255,255,0.5);
+    cursor: pointer; font-size: 18px; padding: 4px;
+  }
+  .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar  { display: none !important; }
+  .strip   { border-radius: 0; }
+  .bnav    { display: none !important; }
+  .scroll  { padding: 20px 24px; }
+  .desktop-header {
+    padding: 20px 24px 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .desktop-header h2 { font-size: 20px; font-weight: 700; color: var(--vb); }
+  .desktop-strip { display: flex; gap: 12px; padding: 16px 24px 0; }
+  .ds-card { flex: 1; background: var(--bg); border-radius: 10px; padding: 14px; text-align: center; }
+  .ds-num { font-size: 28px; font-weight: 800; }
+  .ds-lbl { font-size: 11px; color: var(--vm); margin-top: 3px; font-weight: 500; }
+}
+@media (max-width: 899px) {
+  .sidebar { display: none; }
+  .desktop-header { display: none; }
+  .desktop-strip { display: none; }
+}
+
+/* ════════════════════════════════════════
+   TOPBAR (Mobile)
+════════════════════════════════════════ */
+.topbar {
+  background: var(--vb); padding: 14px 16px 12px;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.tb-logo {
+  width: 32px; height: 32px; background: white; border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 14px; color: var(--vb); flex-shrink: 0;
+}
+.topbar h1 { color: white; font-size: 15px; font-weight: 700; flex: 1; }
+.tb-user-btn {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); border: none; cursor: pointer;
+  font-size: 11px; font-weight: 700; color: white; flex-shrink: 0;
+}
+
+/* ════════════════════════════════════════
+   STRIP (Mobile)
+════════════════════════════════════════ */
+.strip { background: var(--vbm); padding: 8px 16px; display: flex; flex-shrink: 0; }
+.strip-i { flex: 1; text-align: center; }
+.strip-n { font-size: 20px; font-weight: 700; color: white; }
+.strip-l { font-size: 10px; color: rgba(255,255,255,0.6); margin-top: 1px; }
+
+/* ════════════════════════════════════════
+   SCROLL AREA
+════════════════════════════════════════ */
+.scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; }
+.scroll::-webkit-scrollbar { width: 4px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--vbb); border-radius: 99px; }
+
+/* ════════════════════════════════════════
+   BOTTOM NAV (Mobile)
+════════════════════════════════════════ */
+.bnav {
+  display: flex; background: var(--vb); border-top: 2px solid #0d1f3c;
+  flex-shrink: 0; padding-bottom: var(--safe-b);
+}
+.bn {
+  flex: 1; padding: 10px 4px 12px; text-align: center;
+  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.5);
+  cursor: pointer; border: none; background: none; font-family: inherit;
+  transition: all 0.15s;
+}
+.bn.on { color: white; background: rgba(255,255,255,0.12); }
+.bn-ic { font-size: 18px; margin-bottom: 2px; }
+
+/* ════════════════════════════════════════
+   VIEWS
+════════════════════════════════════════ */
+.view { display: none; }
+.view.on { display: block; }
+
+/* ════════════════════════════════════════
+   ALLGEMEINE KOMPONENTEN
+════════════════════════════════════════ */
+.lbl { font-size: 11px; font-weight: 700; color: var(--vm); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 8px; }
+.div  { height: 1px; background: #e0e8f0; margin: 16px 0; }
+.empty { text-align: center; padding: 30px; color: var(--vm); font-size: 13px; }
+.empty-ic { font-size: 32px; margin-bottom: 8px; }
+
+/* Chips */
+.chips { display: flex; gap: 6px; margin-bottom: 14px; overflow-x: auto; padding-bottom: 4px; }
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0; padding: 7px 13px; border-radius: 99px; font-size: 12px;
+  border: 1.5px solid var(--vbb); color: var(--vm); background: white;
+  white-space: nowrap; font-weight: 600; cursor: pointer; transition: all .12s;
+}
+.chip.on { background: var(--vb); color: white; border-color: var(--vb); }
+
+/* KFZ Box */
+.kfz-box { background: var(--vbl); border-radius: 10px; padding: 10px 13px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
+.plate { background: white; border: 2.5px solid var(--vb); border-radius: 6px; padding: 4px 10px; font-size: 13px; font-weight: 800; color: var(--vb); letter-spacing: .08em; }
+.no-box { border: 1.5px solid var(--vr); border-radius: 10px; padding: 13px; background: var(--vrl); margin-bottom: 14px; }
+.no-title { font-size: 13px; font-weight: 700; color: var(--vr); margin-bottom: 4px; }
+.no-sub { font-size: 12px; color: #6a1008; line-height: 1.5; }
+
+/* Form */
+.form-box { background: #d8e3f4; border-radius: 11px; padding: 13px; margin-bottom: 10px; }
+.frow { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.frow:last-child { margin-bottom: 0; }
+.frow label { font-size: 12px; color: #1a2a4a; font-weight: 700; width: 48px; flex-shrink: 0; }
+.frow select, .frow input[type=date] {
+  flex: 1; font-size: 13px; padding: 8px 10px;
+  border: 1.5px solid #8aa4c8; border-radius: 8px;
+  background: white; color: #1a1a2e; font-family: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+
+/* Extend row */
+.ext-row { display: none; align-items: center; gap: 10px; padding: 9px 11px; background: white; border-radius: 8px; border: 1.5px solid #9fd4b4; margin-bottom: 10px; }
+.ext-row.on { display: flex; }
+.ext-row label { font-size: 12px; color: #145530; font-weight: 600; flex: 1; }
+.ext-sel { font-size: 12px; padding: 5px 8px; border: 1.5px solid #9fd4b4; border-radius: 7px; background: white; color: #145530; font-family: inherit; font-weight: 700; }
+
+/* Buttons */
+.btn { display: block; width: 100%; padding: 13px; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: inherit; border: none; transition: all .12s; letter-spacing: .01em; }
+.btn:active { transform: scale(0.98); }
+.btn-primary { background: var(--vb); color: white; border: 3px solid #0d1f3c; box-shadow: 0 3px 8px rgba(26,58,107,.35); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.btn-primary:disabled { background: #7a8fa8; border-color: #5a7090; color: #d0d8e4; box-shadow: none; text-shadow: none; transform: none; }
+.btn-outline { background: white; color: var(--vb); border: 2px solid var(--vbb); font-size: 13px; padding: 10px; }
+.btn-sm { padding: 7px 13px; border-radius: 8px; border: none; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.btn-sm:active { opacity: .85; }
+.btn-red  { background: var(--vr); color: white; }
+.btn-grn  { background: var(--vg); color: white; }
+.btn-amber { background: var(--va); color: white; }
+
+/* Warteliste Box */
+.wl-box { display: none; border: 2px solid var(--va); border-radius: 10px; padding: 12px; background: var(--val); margin-bottom: 10px; }
+.wl-box.on { display: block; }
+.wl-title { font-size: 13px; font-weight: 700; color: #7a4500; }
+.wl-sub   { font-size: 12px; color: #5a3000; margin-top: 4px; line-height: 1.5; }
+
+/* Confirm card */
+.confirm-card { display: none; background: var(--vg); border-radius: 12px; padding: 14px 16px; margin-top: 12px; align-items: center; gap: 14px; animation: slideIn .3s ease; }
+.confirm-card.on { display: flex; }
+@keyframes slideIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+.confirm-ic { width: 46px; height: 46px; background: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; color: var(--vg); flex-shrink: 0; }
+.confirm-info { color: white; }
+.confirm-title { font-size: 14px; font-weight: 800; }
+.confirm-sub   { font-size: 12px; opacity: .85; margin-top: 3px; }
+
+/* Timeline */
+.tl-row { display: flex; min-height: 28px; }
+.tl-t { width: 44px; font-size: 10px; color: var(--vm); padding-top: 3px; text-align: right; padding-right: 8px; flex-shrink: 0; font-weight: 600; }
+.tl-c { flex: 1; border-left: 1.5px solid var(--vbb); padding: 3px 0 3px 8px; display: flex; align-items: center; }
+.tl-b { height: 22px; border-radius: 6px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; font-weight: 700; width: 94%; }
+.tl-b.fr { background: var(--vb); color: white; cursor: pointer; }
+.tl-b.mi { background: var(--vg); color: white; }
+.tl-b.bl { background: var(--vr); color: white; }
+
+/* Booking cards */
+.bk-card { border: 1.5px solid #d0d8e8; border-radius: 11px; padding: 12px 13px; background: white; margin-bottom: 9px; }
+.bk-head { display: flex; align-items: center; gap: 11px; margin-bottom: 7px; }
+.bk-ic { width: 38px; height: 38px; border-radius: 9px; background: var(--vb); display: flex; align-items: center; justify-content: center; font-size: 15px; color: white; font-weight: 800; flex-shrink: 0; }
+.bk-title { font-size: 13px; font-weight: 700; }
+.bk-sub   { font-size: 11px; color: var(--vm); margin-top: 2px; }
+.bk-kz    { font-size: 11px; color: var(--vb); font-weight: 700; letter-spacing: .05em; margin-top: 2px; }
+.bk-actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.wl-card { border: 2px solid var(--va); border-radius: 11px; padding: 12px 13px; background: var(--val); margin-bottom: 9px; }
+.wl-card-title { font-size: 13px; font-weight: 700; color: var(--va); }
+.wl-card-sub   { font-size: 11px; color: #7a4500; margin-top: 3px; }
+
+/* Belegungsplan */
+.bp-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.bp-controls label { font-size: 12px; color: var(--vm); font-weight: 600; }
+.bp-controls input, .bp-controls select { font-size: 13px; padding: 7px 10px; border: 1.5px solid var(--vbb); border-radius: 8px; background: white; color: #1a1a2e; font-family: inherit; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #3a4a5a; font-weight: 600; }
+.leg-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+.slot-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 16px; }
+@media (min-width: 900px) { .slot-grid { grid-template-columns: repeat(8, 1fr); } }
+.slot-tile { border-radius: 8px; padding: 8px 4px; text-align: center; border: 1.5px solid transparent; }
+.slot-tile .sn { font-size: 13px; font-weight: 800; }
+.slot-tile .ss { font-size: 9px; margin-top: 2px; font-weight: 700; }
+.slot-tile.fr { background: #e8f5ee; border-color: #9fd4b4; }
+.slot-tile.fr .sn, .slot-tile.fr .ss { color: var(--vg); }
+.slot-tile.bl { background: var(--vrl); border-color: #d0a0a0; }
+.slot-tile.bl .sn, .slot-tile.bl .ss { color: var(--vr); }
+.slot-tile.re { background: var(--val); border-color: #f0c070; }
+.slot-tile.re .sn, .slot-tile.re .ss { color: var(--va); }
+
+/* Admin */
+.atabs { display: flex; border-bottom: 2px solid var(--vbb); margin-bottom: 14px; }
+.atab { flex: 1; padding: 9px 4px; font-size: 12px; font-weight: 700; color: var(--vm); border: none; background: none; cursor: pointer; font-family: inherit; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all .15s; }
+.atab.on { color: var(--vb); border-bottom-color: var(--vb); }
+.asub { display: none; }
+.asub.on { display: block; }
+.add-form { background: var(--vbl); border-radius: 10px; padding: 13px; margin-bottom: 13px; }
+.add-form-title { font-size: 12px; font-weight: 700; color: var(--vb); margin-bottom: 9px; }
+.fi { width: 100%; font-size: 13px; padding: 9px 11px; border: 1.5px solid var(--vbb); border-radius: 8px; font-family: inherit; background: white; color: #1a1a2e; margin-bottom: 8px; display: block; }
+.fi:focus { outline: none; border-color: var(--vb); }
+.aw-row { display: flex; align-items: center; gap: 9px; padding: 10px 11px; border: 1.5px solid #d0d8e8; border-radius: 9px; background: white; margin-bottom: 6px; }
+.aw-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; flex-shrink: 0; }
+.aw-info { flex: 1; }
+.aw-name { font-size: 13px; font-weight: 700; }
+.aw-kz { font-size: 11px; color: var(--vb); font-weight: 700; letter-spacing: .05em; }
+.badge { font-size: 10px; padding: 3px 8px; border-radius: 99px; font-weight: 700; }
+.b-ok { background: var(--vg); color: white; }
+.b-no { background: var(--vr); color: white; }
+.tog { width: 38px; height: 22px; border-radius: 11px; background: #bbb; cursor: pointer; position: relative; border: none; transition: background .2s; flex-shrink: 0; }
+.tog.on { background: var(--vg); }
+.tog::after { content:''; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:white; transition:left .2s; box-shadow:0 1px 3px rgba(0,0,0,.2); }
+.tog.on::after { left: 19px; }
+.stat2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-bottom: 14px; }
+.stat-c { background: var(--bg); border-radius: 9px; padding: 11px; text-align: center; }
+.stat-n { font-size: 24px; font-weight: 800; }
+.stat-l { font-size: 11px; color: var(--vm); margin-top: 3px; font-weight: 600; }
+.setting-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: white; border: 1.5px solid #d0d8e8; border-radius: 9px; margin-bottom: 6px; }
+.setting-label { flex: 1; font-size: 13px; color: #1a1a2e; }
+.setting-val { font-size: 13px; font-weight: 700; color: var(--vb); width: 50px; text-align: center; }
+.setting-input { width: 60px; font-size: 13px; padding: 5px 8px; border: 1.5px solid var(--vbb); border-radius: 7px; text-align: center; font-family: inherit; }
+
+/* Auswertungen */
+.chart-card { background: white; border: 1.5px solid #d0d8e8; border-radius: 11px; padding: 14px; margin-bottom: 14px; }
+.chart-title { font-size: 13px; font-weight: 700; color: var(--vb); margin-bottom: 12px; }
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.data th { background: var(--vb); color: white; padding: 8px 10px; text-align: left; font-weight: 700; }
+table.data td { padding: 8px 10px; border-bottom: 1px solid #e8edf6; }
+table.data tr:last-child td { border-bottom: none; }
+table.data tr:hover td { background: var(--vbl); }
+
+/* Login */
+.login-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; background: var(--bg); }
+.login-card { width: 100%; max-width: 380px; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.12); }
+.login-head { background: var(--vb); padding: 28px 24px; text-align: center; }
+.login-head-logo { width: 48px; height: 48px; background: white; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 22px; color: var(--vb); margin: 0 auto 12px; }
+.login-head h1 { color: white; font-size: 18px; font-weight: 700; }
+.login-head p { color: rgba(255,255,255,.65); font-size: 12px; margin-top: 4px; }
+.login-body { padding: 24px; }
+.login-tab-row { display: flex; gap: 0; margin-bottom: 20px; border: 1.5px solid var(--vbb); border-radius: 8px; overflow: hidden; }
+.login-tab { flex: 1; padding: 9px; font-size: 12px; font-weight: 700; background: none; border: none; cursor: pointer; font-family: inherit; color: var(--vm); transition: all .15s; }
+.login-tab.on { background: var(--vb); color: white; }
+.login-label { font-size: 12px; font-weight: 700; color: var(--vm); margin-bottom: 5px; display: block; }
+.login-input { width: 100%; font-size: 14px; padding: 10px 12px; border: 1.5px solid var(--vbb); border-radius: 8px; font-family: inherit; color: #1a1a2e; margin-bottom: 12px; background: white; }
+.login-input:focus { outline: none; border-color: var(--vb); }
+.btn-login { width: 100%; padding: 13px; background: var(--vb); color: white; border: 3px solid #0d1f3c; border-radius: 10px; font-size: 15px; font-weight: 800; cursor: pointer; font-family: inherit; box-shadow: 0 3px 8px rgba(26,58,107,.3); }
+.btn-login:active { opacity: .9; }
+.login-err { background: var(--vrl); border: 1.5px solid var(--vr); border-radius: 8px; padding: 9px 12px; font-size: 12px; color: var(--vr); font-weight: 600; margin-bottom: 12px; display: none; }
+.login-ok  { background: var(--vgl); border: 1.5px solid var(--vg); border-radius: 8px; padding: 9px 12px; font-size: 12px; color: var(--vg); font-weight: 600; margin-bottom: 12px; display: none; }
+.login-link { text-align: center; margin-top: 12px; }
+.login-link button { background: none; border: none; color: var(--vbm); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; font-family: inherit; }
+.admin-link-wrap { text-align: center; padding: 14px 0 4px; }
+.admin-link-wrap button { background: none; border: none; font-size: 11px; color: #b0bbc8; cursor: pointer; font-family: inherit; text-decoration: underline; }
+
+/* Toast */
+.toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--vb); color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; font-weight: 600; z-index: 9999; opacity: 0; pointer-events: none; transition: opacity .25s; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; }
+.toast.s { background: var(--vg); }
+.toast.e { background: var(--vr); }
+.toast.a { background: var(--va); }
+@media (min-width: 900px) { .toast { bottom: 24px; } }
+
+/* Loader */
+.loader { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 16px; background: var(--vb); }
+.loader-logo { width: 56px; height: 56px; background: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 26px; color: var(--vb); animation: pulse 1.2s ease-in-out infinite; }
+.loader p { color: rgba(255,255,255,.7); font-size: 14px; font-weight: 600; }
+@keyframes pulse { 0%,100%{transform:scale(1)}50%{transform:scale(1.08)} }
+
+/* Max-buchungen warning */
+.max-warn { background: var(--vrl); border: 1.5px solid var(--vr); border-radius: 10px; padding: 11px 13px; margin-bottom: 10px; font-size: 12px; color: var(--vr); font-weight: 600; display: none; }
+.max-warn.on { display: block; }
+</style>
+</head>
+<body>
+
+<!-- LOADER -->
+<div class="loader" id="loader">
+  <div class="loader-logo">P</div>
+  <p>VAK Parkplatz wird geladen…</p>
+</div>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="login-wrap" style="display:none">
+  <div class="login-card">
+    <div class="login-head">
+      <div class="login-head-logo">P</div>
+      <h1>VAK Parkplatz</h1>
+      <p>Versorgungsausgleichskasse</p>
+    </div>
+    <div class="login-body">
+      <div class="login-tab-row">
+        <button class="login-tab on" onclick="loginTab('signin',this)">Anmelden</button>
+        <button class="login-tab" onclick="loginTab('reset',this)">Passwort vergessen</button>
+      </div>
+
+      <!-- SIGN IN -->
+      <div id="lt-signin">
+        <div id="login-err" class="login-err"></div>
+        <label class="login-label">E-Mail-Adresse</label>
+        <input class="login-input" type="email" id="li-email" placeholder="vorname.nachname@vak-sh.de" autocomplete="email">
+        <label class="login-label">Passwort</label>
+        <input class="login-input" type="password" id="li-pw" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+        <button class="btn-login" onclick="doLogin()" id="btn-login">Anmelden</button>
+      </div>
+
+      <!-- RESET -->
+      <div id="lt-reset" style="display:none">
+        <div id="reset-ok"  class="login-ok"></div>
+        <div id="reset-err" class="login-err"></div>
+        <label class="login-label">E-Mail-Adresse</label>
+        <input class="login-input" type="email" id="li-reset-email" placeholder="vorname.nachname@vak-sh.de">
+        <button class="btn-login" onclick="doReset()">Link zum Zurücksetzen senden</button>
+        <div class="login-link"><button onclick="loginTab('signin',document.querySelector('.login-tab'))">← Zurück zur Anmeldung</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HAUPTAPP -->
+<div class="app-shell" id="app" style="display:none">
+
+  <!-- SIDEBAR (Desktop) -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div style="width:36px;height:36px;background:white;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:var(--vb)">P</div>
+      <h1>VAK Parkplatz</h1>
+      <p>Versorgungsausgleichskasse</p>
+    </div>
+    <div class="sidebar-nav">
+      <button class="snav-btn on" id="snav-b" onclick="sv('b')"><span class="snav-icon">🅿</span>Buchen</button>
+      <button class="snav-btn" id="snav-m" onclick="sv('m')"><span class="snav-icon">📋</span>Meine Buchungen</button>
+      <button class="snav-btn" id="snav-p" onclick="sv('p')"><span class="snav-icon">🗺</span>Belegungsplan</button>
+      <button class="snav-btn" id="snav-a" onclick="sv('a')" style="display:none"><span class="snav-icon">⚙</span>Verwaltung</button>
+    </div>
+    <div class="sidebar-user">
+      <div class="sidebar-user-av" id="sb-av">?</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sb-name">—</div>
+        <div class="sidebar-user-role" id="sb-role">—</div>
+      </div>
+      <button class="btn-logout-sidebar" onclick="doLogout()" title="Abmelden">⏻</button>
+    </div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+    <!-- Topbar (Mobile) -->
+    <div class="topbar">
+      <div class="tb-logo">P</div>
+      <h1>VAK Parkplatz</h1>
+      <button class="tb-user-btn" id="tb-av" onclick="doLogout()">?</button>
+    </div>
+
+    <!-- Strip (Mobile) -->
+    <div class="strip">
+      <div class="strip-i"><div class="strip-n" id="s-fr">—</div><div class="strip-l">frei</div></div>
+      <div class="strip-i"><div class="strip-n" id="s-bl">—</div><div class="strip-l">belegt</div></div>
+      <div class="strip-i"><div class="strip-n" id="s-wl" style="color:rgba(255,255,255,.5)">—</div><div class="strip-l">Warteliste</div></div>
+    </div>
+
+    <!-- Desktop Strip -->
+    <div class="desktop-strip" id="desktop-strip" style="display:none">
+      <div class="ds-card"><div class="ds-num" id="ds-fr" style="color:var(--vg)">—</div><div class="ds-lbl">Plätze frei</div></div>
+      <div class="ds-card"><div class="ds-num" id="ds-bl" style="color:var(--vr)">—</div><div class="ds-lbl">Plätze belegt</div></div>
+      <div class="ds-card"><div class="ds-num" id="ds-wl" style="color:var(--va)">—</div><div class="ds-lbl">Warteliste</div></div>
+      <div class="ds-card"><div class="ds-num" id="ds-bk" style="color:var(--vb)">—</div><div class="ds-lbl">Meine Buchungen</div></div>
+    </div>
+
+    <!-- Desktop Header -->
+    <div class="desktop-header" id="desktop-header" style="display:none">
+      <h2 id="dh-title">Parkplatz buchen</h2>
+    </div>
+
+    <!-- SCROLL -->
+    <div class="scroll" id="scroll-main">
+
+      <!-- ══ BUCHEN ══ -->
+      <div class="view on" id="v-b">
+        <div class="lbl">Datum wählen</div>
+        <div class="chips" id="dchips"></div>
+
+        <div id="kfz-ok" class="kfz-box" style="display:none">
+          <div>
+            <div style="font-size:11px;color:#3a5080;font-weight:700;margin-bottom:3px;">Ihr Fahrzeug</div>
+            <div class="plate" id="plate-txt">—</div>
+          </div>
+          <div style="margin-left:auto;font-size:11px;color:var(--vg);font-weight:700;">✓ Ausweis aktiv</div>
+        </div>
+        <div id="kfz-no" class="no-box" style="display:none">
+          <div class="no-title">Kein Parkausweis</div>
+          <div class="no-sub">Sie sind nicht berechtigt zu buchen. Bitte wenden Sie sich an die Verwaltung.</div>
+        </div>
+
+        <div id="f-wrap">
+          <div class="max-warn" id="max-warn"></div>
+          <div class="lbl">Zeitraum wählen</div>
+          <div class="form-box">
+            <div class="frow"><label>Von</label><select id="sel-v" onchange="tc()"></select></div>
+            <div class="frow"><label>Bis</label><select id="sel-b" onchange="tc()"></select></div>
+          </div>
+
+          <div id="wlbox" class="wl-box">
+            <div class="wl-title">Keine Plätze verfügbar</div>
+            <div class="wl-sub">Alle Plätze sind für diesen Zeitraum belegt. Auf die Warteliste eintragen und bei Freiwerdung benachrichtigt werden?</div>
+            <button class="btn btn-amber" style="margin-top:9px;font-size:13px;" onclick="joinWL()">Auf Warteliste eintragen</button>
+          </div>
+
+          <button class="btn btn-primary" id="b-book" onclick="book()">Jetzt buchen</button>
+
+          <div class="confirm-card" id="confirm-card">
+            <div class="confirm-ic" id="confirm-ic">✓</div>
+            <div class="confirm-info">
+              <div class="confirm-title" id="confirm-title">Gebucht!</div>
+              <div class="confirm-sub" id="confirm-sub"></div>
+            </div>
+          </div>
+
+          <div class="div"></div>
+          <div class="lbl">Tagesübersicht</div>
+          <div id="tl"></div>
+        </div>
+
+        <div class="admin-link-wrap"><button onclick="sv('a')">Verwaltung</button></div>
+      </div>
+
+      <!-- ══ MEINE BUCHUNGEN ══ -->
+      <div class="view" id="v-m">
+        <div class="lbl">Meine Buchungen</div>
+        <div id="m-list"></div>
+        <div class="admin-link-wrap" style="margin-top:8px;"><button onclick="sv('a')">Verwaltung</button></div>
+      </div>
+
+      <!-- ══ BELEGUNGSPLAN ══ -->
+      <div class="view" id="v-p">
+        <div class="lbl">Belegungsplan</div>
+        <div class="bp-controls">
+          <label>Datum</label>
+          <input type="date" id="bp-date" onchange="renderPlan()">
+          <label>Uhrzeit</label>
+          <select id="bp-time" onchange="renderPlan()"></select>
+        </div>
+        <div class="legend">
+          <div class="leg"><div class="leg-dot" style="background:#e8f5ee;border:1.5px solid #9fd4b4"></div>Frei</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--vrl);border:1.5px solid #d0a0a0"></div>Belegt</div>
+          <div class="leg"><div class="leg-dot" style="background:var(--val);border:1.5px solid #f0c070"></div>♿ Reserviert</div>
+        </div>
+        <div class="slot-grid" id="plan-grid"></div>
+      </div>
+
+      <!-- ══ VERWALTUNG ══ -->
+      <div class="view" id="v-a">
+        <div class="atabs">
+          <button class="atab on" onclick="aTab('aw',this)">Ausweise</button>
+          <button class="atab" onclick="aTab('bl',this)">Belegung</button>
+          <button class="atab" onclick="aTab('st',this)">Einstellungen</button>
+          <button class="atab" onclick="aTab('au',this)">Auswertung</button>
+        </div>
+        <!-- Parkausweise -->
+        <div class="asub on" id="a-aw">
+          <div class="add-form">
+            <div class="add-form-title">Neuen Parkausweis ausstellen</div>
+            <input class="fi" id="n-email" type="email" placeholder="E-Mail (für Account-Einladung)">
+            <input class="fi" id="n-nm" type="text" placeholder="Name Mitarbeiter/in">
+            <input class="fi" id="n-kz" type="text" placeholder="Kennzeichen (z. B. KI-AB 123)" style="text-transform:uppercase">
+            <button class="btn btn-primary" style="font-size:13px;padding:11px;" onclick="addAW()">Ausweis ausstellen &amp; einladen</button>
+          </div>
+          <div class="lbl">Alle Parkausweise</div>
+          <div id="aw-list"></div>
+        </div>
+        <!-- Belegung -->
+        <div class="asub" id="a-bl">
+          <div class="stat2">
+            <div class="stat-c"><div class="stat-n" id="a-fr" style="color:var(--vg)">—</div><div class="stat-l">Frei heute</div></div>
+            <div class="stat-c"><div class="stat-n" id="a-bl2" style="color:var(--vr)">—</div><div class="stat-l">Belegt heute</div></div>
+          </div>
+          <div class="lbl">Aktive Buchungen</div>
+          <div id="bl-list"></div>
+          <div class="div"></div>
+          <div class="lbl">Warteliste</div>
+          <div id="wl-list"></div>
+        </div>
+        <!-- Einstellungen -->
+        <div class="asub" id="a-st">
+          <div class="lbl">Systemeinstellungen</div>
+          <div id="settings-list"></div>
+          <button class="btn btn-primary" style="font-size:13px;padding:11px;margin-top:10px;" onclick="saveSettings()">Einstellungen speichern</button>
+        </div>
+        <!-- Auswertung -->
+        <div class="asub" id="a-au">
+          <div class="lbl">Auswertungszeitraum</div>
+          <div class="bp-controls" style="margin-bottom:14px;">
+            <label>Von</label><input type="date" id="au-von">
+            <label>Bis</label><input type="date" id="au-bis">
+            <button class="btn-sm btn-amber" onclick="loadAuswertung()">Laden</button>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Tagesauslastung (%)</div>
+            <canvas id="chart-auslastung" height="120"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Buchungen je Person</div>
+            <div class="table-wrap"><table class="data" id="tbl-personen"><thead><tr><th>Name</th><th>Buchungen</th><th>Stunden</th></tr></thead><tbody></tbody></table></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Warteliste-Häufigkeit je Tag</div>
+            <canvas id="chart-warteliste" height="100"></canvas>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /scroll -->
+
+    <!-- Bottom Nav (Mobile) -->
+    <div class="bnav">
+      <button class="bn on" id="bn-b" onclick="sv('b')"><div class="bn-ic">🅿</div>Buchen</button>
+      <button class="bn" id="bn-m" onclick="sv('m')"><div class="bn-ic">📋</div>Meine</button>
+      <button class="bn" id="bn-p" onclick="sv('p')"><div class="bn-ic">🗺</div>Belegung</button>
+      <button class="bn" id="bn-a" onclick="sv('a')" style="display:none"><div class="bn-ic">⚙</div>Admin</button>
+    </div>
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
+
+<div class="toast" id="toast"></div>
+
+<!-- ═══════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════ -->
+<script>
+// ─── SUPABASE KONFIGURATION ───────────────────
+// DIESE WERTE nach Anlegen des Supabase-Projekts eintragen:
+const SUPABASE_URL = 'https://mfjlatmwdfvhihqtfuki.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mamxhdG13ZGZ2aGlocXRmdWtpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzczNzg3MDcsImV4cCI6MjA5Mjk1NDcwN30.J99_48xRzNlgDHukiMNikPlWQ4Gy_kFhtkvxt_ytd1U';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ─── KONSTANTEN ─────────────────────────────
+const RESERVED = [1, 2];   // ♿ Schwerbehinderte, Türnähe
+const COLORS   = ['#1a3a6b','#1d7a45','#7a3b1d','#4a1d7a','#6b3a1a','#1a5a6b','#5a1a6b'];
+
+// ─── STATE ──────────────────────────────────
+let currentUser   = null;
+let currentProfile= null;
+let selD          = null;
+let settings      = { max_buchungen_pro_person:3, wl_reaktionszeit_stunden:2, total_plaetze:65, betrieb_von:5, betrieb_bis:20, voraus_tage:10 };
+let localBK       = {};   // Demo-Fallback wenn Supabase nicht konfiguriert
+let localWL       = {};
+let localAW       = [
+  {id:'demo-0',name:'Maria Schmidt', kfz:'KI-MS 421', ausweis_aktiv:true,  role:'admin', email:'maria@demo.de'},
+  {id:'demo-1',name:'Klaus Meier',   kfz:'KI-KM 887', ausweis_aktiv:true,  role:'user',  email:'klaus@demo.de'},
+  {id:'demo-2',name:'Jana Hoffmann', kfz:'HB-JH 55',  ausweis_aktiv:true,  role:'user',  email:'jana@demo.de'},
+  {id:'demo-3',name:'Thomas Weber',  kfz:'KI-TW 200', ausweis_aktiv:false, role:'user',  email:'thomas@demo.de'},
+  {id:'demo-4',name:'Petra Schulz',  kfz:'PLÖ-PS 12', ausweis_aktiv:true,  role:'user',  email:'petra@demo.de'},
+];
+let demoMode      = false;   // wird true wenn Supabase nicht konfiguriert
+let demoUID       = 'demo-0';
+let chartAuslastung = null;
+let chartWL         = null;
+
+// ─── DEMO-MODUS ERKENNEN ───────────────────
+function isDemo() {
+  return SUPABASE_URL.includes('DEIN-PROJEKT') || demoMode;
+}
+
+// ─── INIT ───────────────────────────────────
+async function init() {
+  document.getElementById('loader').style.display = 'flex';
+
+  if(isDemo()) {
+    demoMode = true;
+    startDemo();
+    return;
+  }
+
+  // Supabase Session prüfen
+  const { data: { session } } = await sb.auth.getSession();
+  if(session) {
+    await loadUserProfile(session.user);
+    showApp();
+  } else {
+    showLogin();
+  }
+
+  // Auth-Änderungen abonnieren
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if(event === 'SIGNED_IN' && session) {
+      await loadUserProfile(session.user);
+      showApp();
+    } else if(event === 'SIGNED_OUT') {
+      showLogin();
+    }
+  });
+}
+
+async function loadUserProfile(user) {
+  currentUser = user;
+  const { data } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if(data) currentProfile = data;
+}
+
+// ─── DEMO MODUS ────────────────────────────
+function startDemo() {
+  currentProfile = localAW[0];
+  document.getElementById('loader').style.display = 'none';
+  showApp();
+  showToast('Demo-Modus: Supabase nicht konfiguriert','a');
+}
+
+function demoNextUser() {
+  const idx = localAW.findIndex(a=>a.id===demoUID);
+  demoUID = localAW[(idx+1)%localAW.length].id;
+  currentProfile = localAW.find(a=>a.id===demoUID);
+  updateUserUI();
+  showToast('Angemeldet: '+currentProfile.name,'');
+  rAll();
+}
+
+// ─── AUTH ───────────────────────────────────
+function showLogin() {
+  document.getElementById('loader').style.display   = 'none';
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('app').style.display        = 'none';
+}
+
+function showApp() {
+  document.getElementById('loader').style.display     = 'none';
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('app').style.display        = 'flex';
+  updateUserUI();
+  buildSel();
+  buildBPTime();
+  rAll();
+  // Desktop-Elemente einblenden
+  if(window.innerWidth >= 900) {
+    document.getElementById('desktop-strip').style.display = 'flex';
+    document.getElementById('desktop-header').style.display = 'flex';
+  }
+}
+
+function updateUserUI() {
+  const p = currentProfile;
+  if(!p) return;
+  const ini = p.name.split(' ').map(n=>n[0]).join('');
+  document.getElementById('tb-av').textContent  = ini;
+  document.getElementById('sb-av').textContent  = ini;
+  document.getElementById('sb-name').textContent = p.name;
+  document.getElementById('sb-role').textContent = p.role==='admin'?'Administrator':'Mitarbeiter/in';
+  document.getElementById('plate-txt').textContent = p.kfz||'—';
+  // KFZ Banner
+  document.getElementById('kfz-ok').style.display = p.ausweis_aktiv?'flex':'none';
+  document.getElementById('kfz-no').style.display = p.ausweis_aktiv?'none':'block';
+  document.getElementById('f-wrap').style.display = p.ausweis_aktiv?'block':'none';
+  // Admin-Buttons
+  const isAdmin = p.role==='admin';
+  document.getElementById('snav-a').style.display = isAdmin?'flex':'none';
+  document.getElementById('bn-a').style.display   = isAdmin?'flex':'none';
+  document.getElementById('confirm-card').classList.remove('on');
+}
+
+function loginTab(tab, btn) {
+  document.querySelectorAll('.login-tab').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.getElementById('lt-signin').style.display = tab==='signin'?'block':'none';
+  document.getElementById('lt-reset').style.display  = tab==='reset' ?'block':'none';
+}
+
+async function doLogin() {
+  const email = document.getElementById('li-email').value.trim();
+  const pw    = document.getElementById('li-pw').value;
+  const errEl = document.getElementById('login-err');
+  errEl.style.display='none';
+  document.getElementById('btn-login').textContent = 'Anmelden…';
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+  document.getElementById('btn-login').textContent = 'Anmelden';
+  if(error) { errEl.textContent=error.message; errEl.style.display='block'; }
+}
+
+async function doReset() {
+  const email = document.getElementById('li-reset-email').value.trim();
+  const okEl  = document.getElementById('reset-ok');
+  const errEl = document.getElementById('reset-err');
+  okEl.style.display='none'; errEl.style.display='none';
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  if(error) { errEl.textContent=error.message; errEl.style.display='block'; }
+  else { okEl.textContent='E-Mail zum Zurücksetzen wurde gesendet.'; okEl.style.display='block'; }
+}
+
+async function doLogout() {
+  if(isDemo()){ showToast('Demo-Modus: kein Logout möglich','a'); return; }
+  await sb.auth.signOut();
+}
+
+// ─── DATUM & SELECTS ───────────────────────
+function today() { return new Date().toISOString().slice(0,10); }
+function fmtL(d) { const p=d.split('-'); return p[2]+'.'+p[1]+'.'+p[0]; }
+function hs(h)   { return h.toString().padStart(2,'0')+':00'; }
+function ini(s)  { return s.split(' ').map(n=>n[0]).join(''); }
+
+function getWorkdays() {
+  const days=[]; let d=new Date();
+  while(days.length<settings.voraus_tage){
+    const dow=d.getDay();
+    if(dow!==0&&dow!==6) days.push(d.toISOString().slice(0,10));
+    d.setDate(d.getDate()+1);
+  }
+  return days;
+}
+function fmtChip(d,isToday) {
+  const days=['So','Mo','Di','Mi','Do','Fr','Sa'], dt=new Date(d), p=d.split('-');
+  if(isToday) return 'Heute';
+  return days[dt.getDay()]+' '+p[2]+'.'+p[1]+'.';
+}
+
+function buildChips() {
+  const el=document.getElementById('dchips'); el.innerHTML='';
+  const wdays=getWorkdays();
+  if(!selD||!wdays.includes(selD)) selD=wdays[0];
+  wdays.forEach((d,i)=>{
+    const div=document.createElement('div');
+    div.className='chip'+(selD===d?' on':'');
+    div.textContent=fmtChip(d,i===0);
+    div.onclick=()=>{ selD=d; buildChips(); tc(); };
+    el.appendChild(div);
+  });
+}
+
+function buildSel() {
+  const v=document.getElementById('sel-v'), b=document.getElementById('sel-b');
+  v.innerHTML=''; b.innerHTML='';
+  for(let h=settings.betrieb_von;h<settings.betrieb_bis;h++){const o=document.createElement('option');o.value=h;o.textContent=hs(h);v.appendChild(o);}
+  for(let h=settings.betrieb_von+1;h<=settings.betrieb_bis;h++){const o=document.createElement('option');o.value=h;o.textContent=hs(h);b.appendChild(o);}
+  v.value=8; b.value=12;
+}
+
+function buildBPTime() {
+  const sel=document.getElementById('bp-time'); sel.innerHTML='';
+  for(let h=settings.betrieb_von;h<=settings.betrieb_bis;h++){
+    const o=document.createElement('option');o.value=h;o.textContent=hs(h);sel.appendChild(o);
+  }
+  sel.value=new Date().getHours()||8;
+}
+
+// ─── DATEN (Demo vs. Supabase) ─────────────
+function gbk(d){ if(!localBK[d])localBK[d]=[]; return localBK[d]; }
+function gwl(d){ if(!localWL[d])localWL[d]=[]; return localWL[d]; }
+
+function countFree(d,v,b) {
+  if(isDemo()) {
+    const used = gbk(d).filter(x=>x.v<b&&x.b>v).length + RESERVED.length;
+    return Math.max(0, settings.total_plaetze - used);
+  }
+  return 0; // wird async geladen
+}
+
+function assignSlot(d,v,b) {
+  const bks=gbk(d);
+  for(let s=RESERVED.length+1;s<=settings.total_plaetze;s++){
+    if(!bks.some(x=>x.slot===s&&x.v<b&&x.b>v)) return s;
+  }
+  return null;
+}
+
+// ─── ZEITÄNDERUNG ─────────────────────────
+async function tc() {
+  const v = parseInt(document.getElementById('sel-v').value);
+  const bel = document.getElementById('sel-b');
+  Array.from(bel.options).forEach(o=>{ o.disabled=parseInt(o.value)<=v; });
+  if(parseInt(bel.value)<=v) bel.value=v+1;
+  const b = parseInt(bel.value);
+  if(!selD) return;
+
+  let f;
+  if(isDemo()) {
+    f = countFree(selD,v,b);
+  } else {
+    const { data } = await sb.rpc('count_free',{p_datum:selD,p_von:v,p_bis:b});
+    f = data || 0;
+  }
+
+  const wlb=document.getElementById('wlbox'), btn=document.getElementById('b-book');
+  if(f===0){ wlb.classList.add('on'); btn.disabled=true; }
+  else { wlb.classList.remove('on'); btn.disabled=false; }
+
+  // Max-Buchungen prüfen
+  await checkMaxWarn();
+  rTL(); await upStrip();
+}
+
+async function checkMaxWarn() {
+  const warn = document.getElementById('max-warn');
+  let aktiv;
+  if(isDemo()){
+    aktiv = Object.values(localBK).flat().filter(x=>x.uid===demoUID).length;
+  } else {
+    const { count } = await sb.from('buchungen').select('*',{count:'exact',head:true})
+      .eq('user_id',currentUser.id).gte('datum',today());
+    aktiv = count||0;
+  }
+  const max = settings.max_buchungen_pro_person;
+  if(aktiv>=max){
+    warn.textContent=`Maximale Buchungsanzahl (${max}) erreicht. Bitte stornieren Sie eine bestehende Buchung.`;
+    warn.classList.add('on');
+    document.getElementById('b-book').disabled=true;
+  } else {
+    warn.classList.remove('on');
+  }
+}
+
+// ─── BUCHEN ─────────────────────────────────
+async function book() {
+  const v = parseInt(document.getElementById('sel-v').value);
+  const b = parseInt(document.getElementById('sel-b').value);
+  if(!selD||b<=v) return;
+
+  let slot, err;
+  if(isDemo()){
+    const uid=demoUID, p=currentProfile;
+    if(!p.ausweis_aktiv){ showToast('Kein gültiger Parkausweis.','e'); return; }
+    const aktiv=Object.values(localBK).flat().filter(x=>x.uid===uid).length;
+    if(aktiv>=settings.max_buchungen_pro_person){ showToast('Max. Buchungsanzahl erreicht.','e'); return; }
+    if(gbk(selD).some(x=>x.uid===uid&&x.v<b&&x.b>v)){ showToast('Überschneidung mit bestehender Buchung.','e'); return; }
+    slot=assignSlot(selD,v,b);
+    if(!slot){ showToast('Keine Plätze frei.','e'); return; }
+    gbk(selD).push({slot,v,b,uid,kfz:p.kfz});
+  } else {
+    const { data } = await sb.rpc('create_buchung',{p_datum:selD,p_von:v,p_bis:b});
+    if(data?.error){ showToast(data.error,'e'); return; }
+    slot=data?.slot; err=data?.error;
+  }
+
+  if(err){ showToast(err,'e'); return; }
+  const card=document.getElementById('confirm-card');
+  card.classList.add('on');
+  document.getElementById('confirm-ic').textContent=slot;
+  document.getElementById('confirm-title').textContent='Platz '+slot+' gebucht!';
+  document.getElementById('confirm-sub').textContent=hs(v)+'–'+hs(b)+' Uhr · '+currentProfile.kfz;
+  showToast('Platz '+slot+' · '+hs(v)+'–'+hs(b)+' gebucht','s');
+  tc();
+}
+
+async function joinWL() {
+  const v=parseInt(document.getElementById('sel-v').value);
+  const b=parseInt(document.getElementById('sel-b').value);
+  if(isDemo()){
+    const wl=gwl(selD);
+    if(wl.some(w=>w.uid===demoUID&&w.v===v&&w.b===b)){ showToast('Bereits auf der Warteliste.','e'); return; }
+    wl.push({uid:demoUID,v,b,created_at:new Date().toISOString()});
+  } else {
+    await sb.from('warteliste').insert({user_id:currentUser.id,datum:selD,von:v,bis:b});
+  }
+  showToast('Warteliste: '+hs(v)+'–'+hs(b),'a');
+  await upStrip();
+}
+
+// ─── TIMELINE ─────────────────────────────
+async function rTL() {
+  const el=document.getElementById('tl'); el.innerHTML='';
+  if(!selD) return;
+  const uid=demoUID;
+  for(let h=settings.betrieb_von;h<settings.betrieb_bis;h++){
+    const row=document.createElement('div'); row.className='tl-row';
+    const tt=document.createElement('div'); tt.className='tl-t'; tt.textContent=hs(h);
+    const cell=document.createElement('div'); cell.className='tl-c';
+    const bar=document.createElement('div');
+    const myb=gbk(selD).find(x=>x.uid===uid&&x.v<=h&&x.b>h);
+    const f=countFree(selD,h,h+1);
+    const tot=settings.total_plaetze-RESERVED.length;
+    if(myb){ bar.className='tl-b mi'; bar.textContent='Platz '+myb.slot+' – Ihre Buchung'; }
+    else if(f===0){ bar.className='tl-b bl'; bar.textContent='Alle Plätze belegt'; }
+    else {
+      bar.className='tl-b fr';
+      bar.textContent=f===tot?'Alle frei':f+' frei';
+      bar.onclick=()=>{ document.getElementById('sel-v').value=h; document.getElementById('sel-b').value=Math.min(h+1,settings.betrieb_bis); tc(); };
+    }
+    cell.appendChild(bar); row.appendChild(tt); row.appendChild(cell); el.appendChild(row);
+  }
+}
+
+// ─── STRIP UPDATE ─────────────────────────
+async function upStrip() {
+  if(!selD) return;
+  const v=parseInt(document.getElementById('sel-v')?.value||8);
+  const b=parseInt(document.getElementById('sel-b')?.value||12);
+  const f=isDemo()?countFree(selD,v,b):0;
+  const wl=isDemo()?gwl(selD).length:0;
+  const bl=(settings.total_plaetze-RESERVED.length)-f;
+  const myBk=isDemo()?Object.values(localBK).flat().filter(x=>x.uid===demoUID).length:0;
+
+  ['s-fr','ds-fr'].forEach(id=>{ const e=document.getElementById(id); if(e) e.textContent=f; });
+  ['s-bl','ds-bl'].forEach(id=>{ const e=document.getElementById(id); if(e) e.textContent=bl; });
+  ['s-wl','ds-wl'].forEach(id=>{ const e=document.getElementById(id); if(e) e.textContent=wl; });
+  const dsBk=document.getElementById('ds-bk'); if(dsBk) dsBk.textContent=myBk;
+  const aFr=document.getElementById('a-fr'); if(aFr) aFr.textContent=f;
+  const aBl=document.getElementById('a-bl2'); if(aBl) aBl.textContent=bl;
+}
+
+// ─── MEINE BUCHUNGEN ──────────────────────
+async function rMeine() {
+  const el=document.getElementById('m-list'); el.innerHTML='';
+  let all=[], wlAll=[];
+
+  if(isDemo()){
+    Object.keys(localBK).forEach(d=>gbk(d).forEach((x,i)=>{ if(x.uid===demoUID) all.push({d,x,i}); }));
+    Object.keys(localWL).forEach(d=>gwl(d).forEach((w,i)=>{ if(w.uid===demoUID) wlAll.push({d,w,i}); }));
+  } else {
+    const { data:bks } = await sb.from('buchungen').select('*').eq('user_id',currentUser.id).gte('datum',today()).order('datum').order('von');
+    const { data:wls } = await sb.from('warteliste').select('*').eq('user_id',currentUser.id).gte('datum',today()).eq('abgelaufen',false);
+    all   = (bks||[]).map(x=>({d:x.datum,x,i:x.id}));
+    wlAll = (wls||[]).map(w=>({d:w.datum,w,i:w.id}));
+  }
+
+  all.sort((a,c)=>a.d.localeCompare(c.d)||a.x.v-c.x.v);
+
+  if(!all.length&&!wlAll.length){
+    el.innerHTML='<div class="empty"><div class="empty-ic">🅿</div>Keine Buchungen vorhanden.</div>'; return;
+  }
+
+  all.forEach(e=>{
+    // Verlängerungsoptionen berechnen
+    let extOpts='';
+    for(let h=e.x.bis+1;h<=settings.betrieb_bis;h++){
+      const f=isDemo()?countFree(e.d,e.x.bis,h):1;
+      if(f>0) extOpts+=`<option value="${h}">bis ${hs(h)}</option>`;
+      else break;
+    }
+    const extSel = extOpts?`<select class="ext-sel" id="ext-${e.i}">${extOpts}</select><button class="btn-sm btn-grn" onclick="extB('${e.d}','${e.i}')">+Zeit</button>`:'';
+    const div=document.createElement('div'); div.className='bk-card';
+    div.innerHTML=`
+      <div class="bk-head">
+        <div class="bk-ic">${e.x.slot||e.x.slot}</div>
+        <div>
+          <div class="bk-title">${fmtL(e.d)}</div>
+          <div class="bk-sub">${hs(e.x.von||e.x.v)} – ${hs(e.x.bis||e.x.b)} Uhr</div>
+          <div class="bk-kz">${e.x.kfz}</div>
+        </div>
+      </div>
+      <div class="bk-actions">
+        ${extSel}
+        <button class="btn-sm btn-red" onclick="delB('${e.d}','${e.i}')">Stornieren</button>
+      </div>`;
+    el.appendChild(div);
+  });
+
+  wlAll.forEach(e=>{
+    const div=document.createElement('div'); div.className='wl-card';
+    div.innerHTML=`
+      <div class="wl-card-title">⏳ Warteliste · ${fmtL(e.d)}</div>
+      <div class="wl-card-sub">${hs(e.w.von||e.w.v)} – ${hs(e.w.bis||e.w.b)} Uhr</div>`;
+    el.appendChild(div);
+  });
+}
+
+async function delB(d,i) {
+  if(!confirm('Buchung stornieren?')) return;
+  if(isDemo()){
+    const bks=gbk(d), idx=bks.findIndex((_,idx2)=>idx2===parseInt(i)||bks[idx2]===i);
+    // i ist index bei demo
+    localBK[d]=bks.filter((_,j)=>j!=i);
+    // Warteliste benachrichtigen
+    const wl=gwl(d);
+    if(wl.length){
+      const nx=wl.shift();
+      setTimeout(()=>showToast(localAW.find(a=>a.id===nx.uid)?.name+' von der Warteliste benachrichtigt','a'),700);
+    }
+  } else {
+    await sb.from('buchungen').delete().eq('id',i);
+  }
+  showToast('Buchung storniert.','');
+  rMeine(); upStrip(); rTL();
+}
+
+async function extB(d,i) {
+  const sel=document.getElementById('ext-'+i);
+  if(!sel) return;
+  const neueBis=parseInt(sel.value);
+  if(isDemo()){
+    const bks=gbk(d);
+    // i ist bei demo der array-index als string
+    const bk=bks[parseInt(i)];
+    if(bk){ bk.b=neueBis; bk.bis=neueBis; }
+  } else {
+    const { data } = await sb.rpc('extend_buchung',{p_buchung_id:i,p_neue_bis:neueBis});
+    if(data?.error){ showToast(data.error,'e'); return; }
+  }
+  showToast('Verlängert bis '+hs(neueBis),'s');
+  rMeine(); upStrip(); rTL();
+}
+
+// ─── BELEGUNGSPLAN ─────────────────────────
+async function renderPlan() {
+  const d=document.getElementById('bp-date').value||today();
+  const h=parseInt(document.getElementById('bp-time').value||8);
+  let bks=[];
+  if(isDemo()){ bks=gbk(d); }
+  else {
+    const { data } = await sb.from('buchungen').select('slot,von,bis').eq('datum',d).lte('von',h).gt('bis',h);
+    bks=data||[];
+  }
+  const grid=document.getElementById('plan-grid'); grid.innerHTML='';
+  for(let s=1;s<=settings.total_plaetze;s++){
+    const isRes=RESERVED.includes(s);
+    const busy=!isRes&&bks.some(x=>(x.slot||x.slot)===s);
+    const cls=isRes?'re':busy?'bl':'fr';
+    const lbl=isRes?'♿':busy?'belegt':'frei';
+    const tile=document.createElement('div'); tile.className='slot-tile '+cls;
+    tile.innerHTML=`<div class="sn">${s}</div><div class="ss">${lbl}</div>`;
+    grid.appendChild(tile);
+  }
+}
+
+// ─── ADMIN ────────────────────────────────
+function aTab(nm,btn) {
+  document.querySelectorAll('.asub').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('.atab').forEach(e=>e.classList.remove('on'));
+  document.getElementById('a-'+nm).classList.add('on'); btn.classList.add('on');
+  if(nm==='bl') { rBL(); upStrip(); }
+  else if(nm==='aw') rAW();
+  else if(nm==='st') rSettings();
+  else if(nm==='au') initAuswertung();
+}
+
+async function rAW() {
+  const el=document.getElementById('aw-list'); el.innerHTML='';
+  let profiles=isDemo()?localAW:[];
+  if(!isDemo()){
+    const { data } = await sb.from('profiles').select('*').order('name');
+    profiles=data||[];
+  }
+  profiles.forEach((a,i)=>{
+    const div=document.createElement('div'); div.className='aw-row';
+    div.innerHTML=`
+      <div class="aw-av" style="background:${COLORS[i%COLORS.length]}">${ini(a.name)}</div>
+      <div class="aw-info"><div class="aw-name">${a.name}</div><div class="aw-kz">${a.kfz}</div></div>
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span class="badge ${a.ausweis_aktiv?'b-ok':'b-no'}">${a.ausweis_aktiv?'aktiv':'gesperrt'}</span>
+        <button class="tog ${a.ausweis_aktiv?'on':''}" onclick="togAW('${a.id}')"></button>
+      </div>`;
+    el.appendChild(div);
+  });
+}
+
+async function togAW(id) {
+  if(isDemo()){
+    const a=localAW.find(x=>x.id===id); if(!a) return;
+    a.ausweis_aktiv=!a.ausweis_aktiv;
+    showToast((a.ausweis_aktiv?'Aktiviert: ':'Gesperrt: ')+a.name,a.ausweis_aktiv?'s':'e');
+  } else {
+    const { data:p } = await sb.from('profiles').select('ausweis_aktiv').eq('id',id).single();
+    await sb.from('profiles').update({ausweis_aktiv:!p.ausweis_aktiv}).eq('id',id);
+    showToast('Ausweis aktualisiert','s');
+  }
+  rAW();
+}
+
+async function addAW() {
+  const email=document.getElementById('n-email').value.trim();
+  const nm=document.getElementById('n-nm').value.trim();
+  const kz=document.getElementById('n-kz').value.trim().toUpperCase();
+  if(!nm||!kz){ showToast('Bitte Name und Kennzeichen angeben.','e'); return; }
+  if(isDemo()){
+    localAW.push({id:'demo-'+Date.now(),name:nm,kfz:kz,ausweis_aktiv:true,role:'user',email});
+    showToast('Ausweis ausgestellt (Demo): '+nm,'s');
+  } else {
+    if(!email){ showToast('Bitte E-Mail angeben.','e'); return; }
+    const { error } = await sb.auth.admin.inviteUserByEmail(email,{data:{name:nm,kfz:kz,role:'user'}});
+    if(error){ showToast(error.message,'e'); return; }
+    showToast('Einladung gesendet: '+email,'s');
+  }
+  document.getElementById('n-email').value='';
+  document.getElementById('n-nm').value='';
+  document.getElementById('n-kz').value='';
+  rAW();
+}
+
+async function rBL() {
+  const el=document.getElementById('bl-list'); el.innerHTML='';
+  const wlEl=document.getElementById('wl-list'); wlEl.innerHTML='';
+  const d=selD||today();
+  let bks=[], wls=[];
+  if(isDemo()){
+    bks=gbk(d);
+    wls=gwl(d);
+  } else {
+    const { data:b } = await sb.from('buchungen').select('*,profiles(name,kfz)').eq('datum',d).order('von');
+    const { data:w } = await sb.from('warteliste').select('*,profiles(name)').eq('datum',d).eq('abgelaufen',false);
+    bks=b||[]; wls=w||[];
+  }
+  if(!bks.length){ el.innerHTML='<div class="empty">Keine Buchungen heute.</div>'; }
+  bks.forEach(b=>{
+    const p=isDemo()?localAW.find(a=>a.id===b.uid):b.profiles;
+    const div=document.createElement('div'); div.className='aw-row';
+    div.innerHTML=`
+      <div class="aw-av" style="background:var(--vb)">${p?ini(p.name):'?'}</div>
+      <div class="aw-info"><div class="aw-name">${p?p.name:'Unbekannt'}</div><div class="aw-kz">${b.kfz||p?.kfz}</div></div>
+      <div style="text-align:right;font-size:12px;color:var(--vm)">P${b.slot}<br>${hs(b.von||b.v)}–${hs(b.bis||b.b)}</div>`;
+    el.appendChild(div);
+  });
+  if(!wls.length){ wlEl.innerHTML='<div class="empty">Warteliste leer.</div>'; }
+  wls.forEach((w,i)=>{
+    const p=isDemo()?localAW.find(a=>a.id===w.uid):w.profiles;
+    const div=document.createElement('div'); div.className='wl-card';
+    div.innerHTML=`<div class="wl-card-title">${i+1}. ${p?p.name:'—'}</div>
+      <div class="wl-card-sub">${hs(w.von||w.v)}–${hs(w.bis||w.b)} Uhr${w.benachrichtigt?' · ⏰ Benachrichtigt':''}</div>`;
+    wlEl.appendChild(div);
+  });
+}
+
+// ─── EINSTELLUNGEN ────────────────────────
+function rSettings() {
+  const el=document.getElementById('settings-list'); el.innerHTML='';
+  const defs=[
+    {key:'max_buchungen_pro_person', label:'Max. Buchungen pro Person'},
+    {key:'wl_reaktionszeit_stunden', label:'Reaktionszeit Warteliste (Std.)'},
+    {key:'total_plaetze',            label:'Gesamtanzahl Parkplätze'},
+    {key:'betrieb_von',              label:'Betriebsbeginn (Stunde)'},
+    {key:'betrieb_bis',              label:'Betriebsende (Stunde)'},
+    {key:'voraus_tage',              label:'Vorausbuchung (Arbeitstage)'},
+  ];
+  defs.forEach(d=>{
+    const div=document.createElement('div'); div.className='setting-row';
+    div.innerHTML=`<div class="setting-label">${d.label}</div>
+      <input class="setting-input" type="number" id="st-${d.key}" value="${settings[d.key]}" min="1">`;
+    el.appendChild(div);
+  });
+}
+
+async function saveSettings() {
+  const defs=['max_buchungen_pro_person','wl_reaktionszeit_stunden','total_plaetze','betrieb_von','betrieb_bis','voraus_tage'];
+  defs.forEach(k=>{
+    const el=document.getElementById('st-'+k);
+    if(el) settings[k]=parseInt(el.value);
+  });
+  if(!isDemo()){
+    for(const k of defs){
+      await sb.from('settings').upsert({key:k,value:String(settings[k])});
+    }
+  }
+  showToast('Einstellungen gespeichert.','s');
+  buildSel(); buildChips();
+}
+
+// ─── AUSWERTUNGEN ─────────────────────────
+function initAuswertung() {
+  const now=new Date();
+  const d30=new Date(now); d30.setDate(d30.getDate()-30);
+  document.getElementById('au-von').value=d30.toISOString().slice(0,10);
+  document.getElementById('au-bis').value=now.toISOString().slice(0,10);
+  loadAuswertung();
+}
+
+async function loadAuswertung() {
+  const von=document.getElementById('au-von').value;
+  const bis=document.getElementById('au-bis').value;
+  if(isDemo()){ renderDemoCharts(); return; }
+
+  const { data:bks } = await sb.from('buchungen').select('datum,von,bis,user_id,profiles(name)').gte('datum',von).lte('datum',bis);
+  const { data:wls } = await sb.from('warteliste').select('datum').gte('datum',von).lte('datum',bis);
+
+  // Auslastung je Tag
+  const tageMap={};
+  (bks||[]).forEach(b=>{
+    if(!tageMap[b.datum]) tageMap[b.datum]=0;
+    tageMap[b.datum]+=(b.bis-b.von);
+  });
+  const tage=Object.keys(tageMap).sort();
+  const maxStunden=(settings.total_plaetze-RESERVED.length)*(settings.betrieb_bis-settings.betrieb_von);
+  const auslPct=tage.map(d=>Math.round(tageMap[d]/maxStunden*100));
+
+  if(chartAuslastung) chartAuslastung.destroy();
+  chartAuslastung=new Chart(document.getElementById('chart-auslastung'),{
+    type:'bar',
+    data:{labels:tage.map(d=>fmtL(d)),datasets:[{label:'Auslastung %',data:auslPct,backgroundColor:'#2a5298'}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}}}}
+  });
+
+  // Buchungen je Person
+  const personMap={};
+  (bks||[]).forEach(b=>{
+    const nm=b.profiles?.name||b.user_id;
+    if(!personMap[nm]) personMap[nm]={count:0,stunden:0};
+    personMap[nm].count++;
+    personMap[nm].stunden+=(b.bis-b.von);
+  });
+  const tbody=document.querySelector('#tbl-personen tbody'); tbody.innerHTML='';
+  Object.entries(personMap).sort((a,b)=>b[1].count-a[1].count).forEach(([nm,v])=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${nm}</td><td>${v.count}</td><td>${v.stunden}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Warteliste je Tag
+  const wlMap={};
+  (wls||[]).forEach(w=>{ wlMap[w.datum]=(wlMap[w.datum]||0)+1; });
+  const wlTage=Object.keys(wlMap).sort();
+  if(chartWL) chartWL.destroy();
+  chartWL=new Chart(document.getElementById('chart-warteliste'),{
+    type:'bar',
+    data:{labels:wlTage.map(d=>fmtL(d)),datasets:[{label:'Warteliste-Einträge',data:wlTage.map(d=>wlMap[d]),backgroundColor:'#c07000'}]},
+    options:{responsive:true,plugins:{legend:{display:false}}}
+  });
+}
+
+function renderDemoCharts() {
+  // Demo-Daten für Charts
+  const labels=['Mo','Di','Mi','Do','Fr','Mo','Di'];
+  if(chartAuslastung) chartAuslastung.destroy();
+  chartAuslastung=new Chart(document.getElementById('chart-auslastung'),{
+    type:'bar',
+    data:{labels,datasets:[{label:'Auslastung %',data:[45,78,92,67,55,88,71],backgroundColor:'#2a5298'}]},
+    options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{max:100,ticks:{callback:v=>v+'%'}}}}
+  });
+  const tbody=document.querySelector('#tbl-personen tbody'); tbody.innerHTML='';
+  [['Maria Schmidt',8,24],['Klaus Meier',5,15],['Jana Hoffmann',7,21],['Petra Schulz',4,12]].forEach(([nm,c,s])=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${nm}</td><td>${c}</td><td>${s}</td>`;
+    tbody.appendChild(tr);
+  });
+  if(chartWL) chartWL.destroy();
+  chartWL=new Chart(document.getElementById('chart-warteliste'),{
+    type:'bar',
+    data:{labels,datasets:[{label:'Warteliste-Einträge',data:[2,5,8,3,1,6,4],backgroundColor:'#c07000'}]},
+    options:{responsive:true,plugins:{legend:{display:false}}}
+  });
+}
+
+// ─── VIEW SWITCHING ──────────────────────
+const viewTitles={b:'Parkplatz buchen',m:'Meine Buchungen',p:'Belegungsplan',a:'Verwaltung'};
+function sv(v) {
+  document.querySelectorAll('.view').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('.bn').forEach(e=>e.classList.remove('on'));
+  document.querySelectorAll('.snav-btn').forEach(e=>e.classList.remove('on'));
+  document.getElementById('v-'+v).classList.add('on');
+  const bn=document.getElementById('bn-'+v); if(bn) bn.classList.add('on');
+  const sn=document.getElementById('snav-'+v); if(sn) sn.classList.add('on');
+  document.getElementById('scroll-main').scrollTop=0;
+  const dh=document.getElementById('dh-title'); if(dh) dh.textContent=viewTitles[v]||'';
+  if(v==='m') rMeine();
+  if(v==='p'){ document.getElementById('bp-date').value=selD||today(); renderPlan(); }
+  if(v==='a'){ rAW(); upStrip(); }
+}
+
+// ─── TOAST ───────────────────────────────
+function showToast(msg,type) {
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.className='toast'+(type?' '+type:'');
+  void el.offsetWidth; el.classList.add('show');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ─── RENDER ALL ──────────────────────────
+function rAll() { buildChips(); tc(); }
+
+// ─── DESKTOP RESIZE ──────────────────────
+window.addEventListener('resize',()=>{
+  const ds=document.getElementById('desktop-strip');
+  const dh=document.getElementById('desktop-header');
+  if(ds) ds.style.display=window.innerWidth>=900?'flex':'none';
+  if(dh) dh.style.display=window.innerWidth>=900?'flex':'none';
+});
+
+// ─── START ───────────────────────────────
+init();
+</script>
+</body>
+</html>
